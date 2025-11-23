@@ -1,5 +1,4 @@
-
-# Split into train, val, and test folders
+# Manual Train / Val / Test Split Script
 
 from pathlib import Path
 import random
@@ -10,90 +9,80 @@ import argparse
 
 # Define and parse user input arguments
 parser = argparse.ArgumentParser()
-parser.add_argument('--datapath', help='Path to data folder containing image and annotation files', required=True)
-parser.add_argument('--train_pct', help='Ratio of images for training. Validation and test split the remainder equally.',
-                    default=0.8)
+parser.add_argument('--datapath', required=True,
+                    help='Path to data folder containing images/labels')
+parser.add_argument('--train_pct', type=float, default=0.7,
+                    help='Train percentage (e.g., 0.7)')
+parser.add_argument('--val_pct', type=float, default=0.2,
+                    help='Validation percentage (e.g., 0.2)')
+parser.add_argument('--test_pct', type=float, default=0.1,
+                    help='Test percentage (e.g., 0.1)')
 args = parser.parse_args()
 
+# Validate sum
+total = args.train_pct + args.val_pct + args.test_pct
+if abs(total - 1.0) > 1e-6:
+    print(f"ERROR: train_pct + val_pct + test_pct = {total}, must equal 1.0")
+    sys.exit(1)
+
 data_path = args.datapath
-train_percent = float(args.train_pct)
 
-# Check for valid entries
 if not os.path.isdir(data_path):
-    print('Directory specified by --datapath not found.')
-    sys.exit(0)
-if train_percent < .01 or train_percent > 0.98:
-    print('Invalid entry for train_pct. Please enter a number between .01 and .98.')
-    sys.exit(0)
+    print("ERROR: datapath not found.")
+    sys.exit(1)
 
-# Remaining split is divided into validation and test equally
-val_percent = (1 - train_percent) / 2
-test_percent = (1 - train_percent) / 2
-
-# Define paths to input dataset 
+# Input folders
 input_image_path = os.path.join(data_path, 'images')
 input_label_path = os.path.join(data_path, 'labels')
 
-# Define destination paths
+# Output paths
 cwd = os.getcwd()
 train_img_path = os.path.join(cwd, 'data/train/images')
 train_txt_path = os.path.join(cwd, 'data/train/labels')
+val_img_path   = os.path.join(cwd, 'data/validation/images')
+val_txt_path   = os.path.join(cwd, 'data/validation/labels')
+test_img_path  = os.path.join(cwd, 'data/test/images')
+test_txt_path  = os.path.join(cwd, 'data/test/labels')
 
-val_img_path = os.path.join(cwd, 'data/validation/images')
-val_txt_path = os.path.join(cwd, 'data/validation/labels')
+# Create folders
+for p in [train_img_path, train_txt_path,
+          val_img_path, val_txt_path,
+          test_img_path, test_txt_path]:
+    os.makedirs(p, exist_ok=True)
 
-test_img_path = os.path.join(cwd, 'data/test/images')
-test_txt_path = os.path.join(cwd, 'data/test/labels')
+# Collect images
+img_files = list(Path(input_image_path).rglob('*'))
+random.shuffle(img_files)
 
-# Create folders if they don't already exist
-for dir_path in [train_img_path, train_txt_path,
-                 val_img_path, val_txt_path,
-                 test_img_path, test_txt_path]:
-    os.makedirs(dir_path, exist_ok=True)
+file_num = len(img_files)
+train_num = int(file_num * args.train_pct)
+val_num   = int(file_num * args.val_pct)
+test_num  = file_num - train_num - val_num
 
-# Get list of all images
-img_file_list = [path for path in Path(input_image_path).rglob('*')]
-txt_file_list = [path for path in Path(input_label_path).rglob('*')]
+print(f"Total images: {file_num}")
+print(f"Train: {train_num}, Val: {val_num}, Test: {test_num}")
 
-print(f'Number of image files: {len(img_file_list)}')
-print(f'Number of annotation files: {len(txt_file_list)}')
-
-# Determine numbers for each split
-file_num = len(img_file_list)
-
-train_num = int(file_num * train_percent)
-val_num = int(file_num * val_percent)
-test_num = file_num - train_num - val_num
-
-print('Images moving to train:', train_num)
-print('Images moving to validation:', val_num)
-print('Images moving to test:', test_num)
-
-# Randomize image list
-random.shuffle(img_file_list)
+# Split lists
+train_files = img_files[:train_num]
+val_files   = img_files[train_num:train_num + val_num]
+test_files  = img_files[train_num + val_num:]
 
 splits = [
-    (train_num, train_img_path, train_txt_path),
-    (val_num,   val_img_path,   val_txt_path),
-    (test_num,  test_img_path,  test_txt_path)
+    (train_files, train_img_path, train_txt_path),
+    (val_files,   val_img_path,   val_txt_path),
+    (test_files,  test_img_path,  test_txt_path)
 ]
 
-index = 0
-
-# Assign files to each split
-for count, img_dest, txt_dest in splits:
-    for _ in range(count):
-        img_path = img_file_list[index]
-        index += 1
-
+# Copy files
+for file_list, img_dest, txt_dest in splits:
+    for img_path in file_list:
         img_fn = img_path.name
         base_fn = img_path.stem
-        txt_fn = base_fn + '.txt'
-        txt_path = os.path.join(input_label_path, txt_fn)
+        txt_path = os.path.join(input_label_path, base_fn + '.txt')
 
         shutil.copy(img_path, os.path.join(img_dest, img_fn))
 
         if os.path.exists(txt_path):
-            shutil.copy(txt_path, os.path.join(txt_dest, txt_fn))
+            shutil.copy(txt_path, os.path.join(txt_dest, base_fn + '.txt'))
 
-print("Splitting complete!")
+print("Done! Train/Val/Test split completed.")
