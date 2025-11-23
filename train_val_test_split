@@ -1,0 +1,98 @@
+# Split into train, val, and test folders
+
+from pathlib import Path
+import random
+import os
+import sys
+import shutil
+import argparse
+
+# Define and parse user input arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('--datapath', help='Path to data folder containing image and annotation files', required=True)
+parser.add_argument('--train_pct', help='Ratio of images for training. Validation and test split the remainder equally.',
+                    default=0.8)
+args = parser.parse_args()
+
+data_path = args.datapath
+train_percent = float(args.train_pct)
+
+# Check for valid entries
+if not os.path.isdir(data_path):
+    print('Directory specified by --datapath not found.')
+    sys.exit(0)
+if train_percent < .01 or train_percent > 0.98:
+    print('Invalid entry for train_pct. Please enter a number between .01 and .98.')
+    sys.exit(0)
+
+# Remaining split is divided into validation and test equally
+val_percent = (1 - train_percent) / 2
+test_percent = (1 - train_percent) / 2
+
+# Define paths to input dataset 
+input_image_path = os.path.join(data_path, 'images')
+input_label_path = os.path.join(data_path, 'labels')
+
+# Define destination paths
+cwd = os.getcwd()
+train_img_path = os.path.join(cwd, 'data/train/images')
+train_txt_path = os.path.join(cwd, 'data/train/labels')
+
+val_img_path = os.path.join(cwd, 'data/validation/images')
+val_txt_path = os.path.join(cwd, 'data/validation/labels')
+
+test_img_path = os.path.join(cwd, 'data/test/images')
+test_txt_path = os.path.join(cwd, 'data/test/labels')
+
+# Create folders if they don't already exist
+for dir_path in [train_img_path, train_txt_path,
+                 val_img_path, val_txt_path,
+                 test_img_path, test_txt_path]:
+    os.makedirs(dir_path, exist_ok=True)
+
+# Get list of all images
+img_file_list = [path for path in Path(input_image_path).rglob('*')]
+txt_file_list = [path for path in Path(input_label_path).rglob('*')]
+
+print(f'Number of image files: {len(img_file_list)}')
+print(f'Number of annotation files: {len(txt_file_list)}')
+
+# Determine numbers for each split
+file_num = len(img_file_list)
+
+train_num = int(file_num * train_percent)
+val_num = int(file_num * val_percent)
+test_num = file_num - train_num - val_num
+
+print('Images moving to train:', train_num)
+print('Images moving to validation:', val_num)
+print('Images moving to test:', test_num)
+
+# Randomize image list
+random.shuffle(img_file_list)
+
+splits = [
+    (train_num, train_img_path, train_txt_path),
+    (val_num,   val_img_path,   val_txt_path),
+    (test_num,  test_img_path,  test_txt_path)
+]
+
+index = 0
+
+# Assign files to each split
+for count, img_dest, txt_dest in splits:
+    for _ in range(count):
+        img_path = img_file_list[index]
+        index += 1
+
+        img_fn = img_path.name
+        base_fn = img_path.stem
+        txt_fn = base_fn + '.txt'
+        txt_path = os.path.join(input_label_path, txt_fn)
+
+        shutil.copy(img_path, os.path.join(img_dest, img_fn))
+
+        if os.path.exists(txt_path):
+            shutil.copy(txt_path, os.path.join(txt_dest, txt_fn))
+
+print("Splitting complete!")
